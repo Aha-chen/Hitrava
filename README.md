@@ -258,6 +258,10 @@ TCX options:
                         specified (default), all distances in the TCX files
                         will be normalized to match the original Huawei
                         distance.
+  --transform_coordinate
+                        Huawei use GCJ-02 as its default coordinate, if you
+                        find obvious offset of the route(mainly in China), 
+                        try this option to transform to WGS-84 coordinate.
 
 OUTPUT options:
   --output_dir OUTPUT_DIR

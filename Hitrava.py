@@ -23,6 +23,7 @@ import tarfile
 import tempfile
 import zipfile
 
+
 import urllib.request as url_req
 import xml.etree.cElementTree as xml_et
 from datetime import datetime as dts
@@ -40,6 +41,12 @@ except:
                      'It is required when using the --validate_xml argument.\n' +
                      'It can be installed using: pip install xmlschema\n')
 
+try:
+    import eviltransform  # (only) needed to transform_coordinate
+except:
+    sys.stderr.write('Info - External library eviltransform could not be imported.\n' +
+                     'It is required when using the --transform_coordinate.\n' +
+                     'It can be installed using: pip install eviltransform\n')
 if sys.version_info < (3, 5, 1):
     sys.stderr.write('You need Python 3.5.1 or later (you are using Python %s.%s.%s).\n' %
                      (sys.version_info.major,
@@ -1508,7 +1515,7 @@ class TcxActivity:
                            (HiActivity.TYPE_UNKNOWN, _SPORT_OTHER),
                            (HiActivity.TYPE_CROSS_COUNTRY_RUN, 'running')]
 
-    def __init__(self, hi_activity: HiActivity, tcx_xml_schema=None, save_dir: str = OUTPUT_DIR,
+    def __init__(self, hi_activity: HiActivity, tcx_xml_schema=None, transform_coordinate=False, save_dir: str = OUTPUT_DIR,
                  filename_prefix: str = None, filename_suffix: str = None, insert_altitude: bool = False):
         if not hi_activity:
             logging.getLogger(PROGRAM_NAME).error("No valid HiTrack activity specified to construct TCX activity.")
@@ -1524,6 +1531,7 @@ class TcxActivity:
         self.tcx_filename = None
         self.filename_suffix = filename_suffix
         self.insert_altitude = insert_altitude
+        self.transform_coordinate = transform_coordinate
 
     def _get_sport(self):
         sport = ''
@@ -1664,11 +1672,15 @@ class TcxActivity:
                     el_time.text = _get_tz_aware_datetime(data['t'], self.hi_activity.time_zone).isoformat('T')
 
                     if 'lat' in data:
+                        #  coordination transformation
+                        if self.transform_coordinate:
+                            final_lat, final_lon = data['lat'], data['lon']
+                            final_lat,final_lon = eviltransform.gcj2wgs(final_lat,final_lon)
                         el_position = xml_et.SubElement(el_trackpoint, 'Position')
                         el_latitude_degrees = xml_et.SubElement(el_position, 'LatitudeDegrees')
-                        el_latitude_degrees.text = str(data['lat'])
+                        el_latitude_degrees.text = str(final_lat)
                         el_longitude_degrees = xml_et.SubElement(el_position, 'LongitudeDegrees')
-                        el_longitude_degrees.text = str(data['lon'])
+                        el_longitude_degrees.text = str(final_lon)
 
                     if 'alti' in data:
                         el_altitude_meters = xml_et.SubElement(el_trackpoint, 'AltitudeMeters')
@@ -2046,6 +2058,10 @@ def _init_argument_parser() -> argparse.ArgumentParser:
                            distance data as calculated from the raw HiTrack data. When not specified (default), all \
                            distances in the TCX files will be normalized to match the original Huawei distance.',
                            action='store_true')
+    
+    tcx_group.add_argument('--transform_coordinate', help='Huawei use GCJ-02 as its default coordinate, if you find obvious offset\
+                           of the route(mainly in China), try this option to transform to WGS-84 coordinate', type=str,
+                            choices=['false', 'true'])
 
     output_group = parser.add_argument_group('OUTPUT options')
     output_group.add_argument('--output_dir', help='The path to the directory to store the output files. The default \
@@ -2101,6 +2117,7 @@ def main():
                                          sys.version_info[2])
 
     tcx_xml_schema = None if not args.validate_xml else _init_tcx_xml_schema()
+    transform_coordinate = args.transform_coordinate == "true" if  args.transform_coordinate else False
 
     if not args.suppress_output_file_sequence:
         output_file_suffix_format = '_%03d'
@@ -2115,7 +2132,7 @@ def main():
         hi_activity = hi_file.parse()
         if args.pool_length:
             hi_activity.set_pool_length(args.pool_length)
-        tcx_activity = TcxActivity(hi_activity, tcx_xml_schema, args.output_dir, args.output_file_prefix,
+        tcx_activity = TcxActivity(hi_activity, tcx_xml_schema, transform_coordinate, args.output_dir, args.output_file_prefix,
                                    args.tcx_insert_altitude_data)
         if args.use_original_filename:
             tcx_activity.save()
@@ -2132,7 +2149,7 @@ def main():
         for n, hi_activity in enumerate(hi_activity_list, start=1):
             if args.pool_length:
                 hi_activity.set_pool_length(args.pool_length)
-            tcx_activity = TcxActivity(hi_activity, tcx_xml_schema, args.output_dir, args.output_file_prefix,
+            tcx_activity = TcxActivity(hi_activity, tcx_xml_schema, transform_coordinate, args.output_dir, args.output_file_prefix,
                                        args.tcx_insert_altitude_data)
             if args.use_original_filename:
                 tcx_activity.save()
@@ -2160,7 +2177,7 @@ def main():
             if not args.tcx_use_raw_distance_data:
                 hi_activity.normalize_distances()
             output_file_suffix = output_file_suffix_format % (n % 1000)
-            tcx_activity = TcxActivity(hi_activity, tcx_xml_schema, args.output_dir, args.output_file_prefix,
+            tcx_activity = TcxActivity(hi_activity, tcx_xml_schema, transform_coordinate, args.output_dir, args.output_file_prefix,
                                        output_file_suffix, args.tcx_insert_altitude_data)
             tcx_activity.save()
             logging.getLogger(PROGRAM_NAME).info('Converted %s', hi_activity)
