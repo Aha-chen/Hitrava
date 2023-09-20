@@ -29,21 +29,21 @@ import xml.etree.cElementTree as xml_et
 from datetime import datetime as dts
 from datetime import timedelta as dts_delta
 from datetime import timezone as tz
-from zipfile import ZipFile as ZipFile
+from zipfile import ZipFile
 
 # External libraries that require installation
 from typing import Optional
 
 try:
     import xmlschema  # (only) needed to validate the generated TCX XML.
-except:
+except ModuleNotFoundError:
     sys.stderr.write('Info - External library xmlschema could not be imported.\n' +
                      'It is required when using the --validate_xml argument.\n' +
                      'It can be installed using: pip install xmlschema\n')
 
 try:
     import eviltransform  # (only) needed to transform_coordinate
-except:
+except ModuleNotFoundError:
     sys.stderr.write('Info - External library eviltransform could not be imported.\n' +
                      'It is required when using the --transform_coordinate.\n' +
                      'It can be installed using: pip install eviltransform\n')
@@ -199,7 +199,7 @@ class HiActivity:
             self._activity_type = activity_type
         else:
             logging.getLogger(PROGRAM_NAME).error('Invalid activity type <%s>', activity_type)
-            raise Exception('Invalid activity type <%s>', activity_type)
+            raise Exception(f'Invalid activity type <{activity_type}>')
 
     def set_pool_length(self, pool_length: int):
         logging.getLogger(PROGRAM_NAME).info('Setting pool length of activity %s to %d', self.activity_id, pool_length)
@@ -237,7 +237,7 @@ class HiActivity:
         # Set stop of current segment, add it to the segment list and clear the current segment
         self._current_segment['stop'] = segment_stop
         self._current_segment['duration'] = int((segment_stop - self._current_segment['start']).total_seconds())
-        if not segment_distance == -1:
+        if segment_distance != -1:
             self._current_segment['distance'] = segment_distance
         else:
             self._current_segment['distance'] = 0
@@ -273,8 +273,7 @@ class HiActivity:
         except Exception as e:
             logging.getLogger(PROGRAM_NAME).error(
                 'One or more required data fields (t, lat, lon) missing or invalid in location data %s\n%s', data, e)
-            raise Exception('One or more required data fields (t, lat, lon) missing or invalid in location data %s',
-                            data)
+            raise
 
         if location_data['t'] == 0 and location_data['lat'] == 90 and location_data['lon'] == -80:
             # Pause/stop record without a valid epoch timestamp. Set it to the last timestamp recorded
@@ -367,7 +366,7 @@ class HiActivity:
                 break
         else:
             logging.getLogger(PROGRAM_NAME).error('Failed to calculate distance between %s and %s', point1, point2)
-            raise Exception('Failed to calculate distance between %s and %s', point1, point2)
+            raise Exception('Failed to calculate distance between %s and %s' % (point1, point2))
 
         uSq = cosSqAlpha * (a ** 2 - b ** 2) / (b ** 2)
         A = 1 + uSq / 16384 * (4096 + uSq * (-768 + uSq * (320 - 175 * uSq)))
@@ -397,8 +396,7 @@ class HiActivity:
         except Exception as e:
             logging.getLogger(PROGRAM_NAME).error(
                 'One or more required data fields (k, v) missing or invalid in heart rate data %s\n%s', data, e)
-            raise Exception('One or more required data fields (k, v) missing or invalid in heart rate data %s\n%s',
-                            data)
+            raise
 
         # Add heart rate data
         self._add_data_detail(hr_data)
@@ -422,7 +420,7 @@ class HiActivity:
         except Exception as e:
             logging.getLogger(PROGRAM_NAME).error(
                 'One or more required data fields (k, v) missing or invalid in altitude data %s\n%s', data, e)
-            raise Exception('One or more required data fields (k, v) missing or invalid in altitude data %s\n%s', data)
+            raise Exception(f'One or more required data fields (k, v) missing or invalid in altitude data {data}\n') from e
 
         # Add altitude data
         self._add_data_detail(alti_data)
@@ -452,8 +450,7 @@ class HiActivity:
         except Exception as e:
             logging.getLogger(PROGRAM_NAME).error(
                 'One or more required data fields (k, v) missing or invalid in step frequency data %s\n%s', data, e)
-            raise Exception('One or more required data fields (k, v) missing or invalid in step frequency data %s\n%s',
-                            data)
+            raise
 
         # Keep track of minimum, maximum and average step frequency data for activity type auto-detection.
         # Ignore negative values since these belong to swimming activities and are not important to recognize the
@@ -521,7 +518,7 @@ class HiActivity:
         except Exception as e:
             logging.getLogger(PROGRAM_NAME).error(
                 'One or more required data fields (k, v) missing or invalid in SWOLF data %s\n%s', data, e)
-            raise Exception('One or more required data fields (k, v) missing or invalid in SWOLF data %s\n%s', data)
+            raise
 
         # Add SWOLF data
         self._add_data_detail(swolf_data)
@@ -548,10 +545,8 @@ class HiActivity:
             stroke_freq_data['t'] = self.start + dts_delta(seconds=int(stroke_freq_data.pop('k')) + 5)
             stroke_freq_data['p-f'] = int(stroke_freq_data.pop('v'))
         except Exception as e:
-            logging.getLogger(PROGRAM_NAME).error(
-                'One or more required data fields (k, v) missing or invalid in stroke frequency data %s\n%s', data, e)
-            raise Exception(
-                'One or more required data fields (k, v) missing or invalid in stroke frequency data %s\n%s', data)
+            logging.getLogger(PROGRAM_NAME).error('One or more required data fields (k, v) missing or invalid in stroke frequency data %s\n', data)
+            raise
 
         # Add stroke frequency data
         self._add_data_detail(stroke_freq_data)
@@ -582,8 +577,8 @@ class HiActivity:
                 return
         except Exception as e:
             logging.getLogger(PROGRAM_NAME).error(
-                'One or more required data fields (k, v) missing or invalid in speed data %s\n%s', data, e)
-            raise Exception('One or more required data fields (k, v) missing or invalid in speed data %s\n%s', data)
+                'One or more required data fields (k, v) missing or invalid in speed data %s\n', data)
+            raise
 
         # Add speed data
         self._add_data_detail(speed_data)
@@ -711,7 +706,7 @@ class HiActivity:
 
         for key, data in self.data_dict.items():
             if 'lat' in data:  # This is a location record
-                if last_location:
+                if last_location is not None:
                     if data['lat'] == 90 and data['lon'] == -80:
                         # Pause or stop records (lat = 90, long = -80, alt = 0) and handle segment data creation
                         # Use timestamp and distance of last (location) record
@@ -753,17 +748,17 @@ class HiActivity:
             # Do not process speed records for open water swim activities
             elif 'rs' in data and self._activity_type != HiActivity.TYPE_OPEN_WATER_SWIM:
                 if last_location:
-                    time_delta = data['t'] - last_location['t']
-                    if not paused and ('lat' not in last_location or time_delta > GPS_TIMEOUT):
+                    time_delta = data['t'] - last_location.get("t")
+                    if not paused and ('lat' not in last_location.keys() or time_delta > GPS_TIMEOUT):
                         # GPS signal lost for more than the GPS timeout period. Calculate distance based on speed records
                         logging.getLogger(PROGRAM_NAME).debug(
                             'No GPS signal between %s and %s in %s. Calculating distance using speed data (%s dm/s)',
-                            last_location['t'], data['t'], self.activity_id, data['rs'])
+                            last_location.get('t'), data['t'], self.activity_id, data['rs'])
                         # If no current segment, create one
                         if not self._current_segment:
                             self._add_segment_start(data['t'])
-                            segment_start_distance = last_location['distance']
-                        data['distance'] = last_location['distance'] + (data['rs'] * time_delta.seconds / 10)
+                            segment_start_distance = last_location.get('distance')
+                        data['distance'] = last_location.get('distance') + (data['rs'] * time_delta.seconds / 10)
                         last_location = data
                 else:
                     # No location records processed and speed record available = start without GPS or no GPS at all.
@@ -970,8 +965,8 @@ class HiTrackFile:
         try:
             self.hitrack_file = open(hitrack_filename, 'r')
         except Exception as e:
-            logging.getLogger(PROGRAM_NAME).error('Error opening HiTrack file <%s>\n%s', hitrack_filename, e)
-            raise Exception('Error opening HiTrack file <%s>', hitrack_filename)
+            logging.getLogger(PROGRAM_NAME).error('Error opening HiTrack file <%s>\n', hitrack_filename)
+            raise
 
         self.activity = None
         self.activity_type = activity_type
@@ -1008,9 +1003,9 @@ class HiTrackFile:
 
         # Create a new activity object for the file
         self.activity = HiActivity(
-            os.path.basename(self.hitrack_file.name), 
-            self.activity_type, 
-            self.timestamp_ref, 
+            os.path.basename(self.hitrack_file.name),
+            self.activity_type,
+            self.timestamp_ref,
             self.start_timestamp_ref)
 
         data_list = []
@@ -1050,9 +1045,9 @@ class HiTrackFile:
                         data_list.append(line[data_index].split('='))  # Parse values after the '=' character
                     self.activity.add_speed_data(data_list)
         except Exception as e:
-            logging.getLogger(PROGRAM_NAME).error('Error parsing file <%s> at line <%d>\nCSV data: %s\n%s',
-                                                  self.hitrack_file.name, line_number, line, e)
-            raise Exception('Error parsing file <%s> at line <%d>\n%s', self.hitrack_file.name, line_number)
+            logging.getLogger(PROGRAM_NAME).error('Error parsing file <%s> at line <%d>\nCSV data: %s\n',
+                                                  self.hitrack_file.name, line_number, line)
+            raise
 
         finally:
             self._close_file()
@@ -1065,7 +1060,7 @@ class HiTrackFile:
                 self.hitrack_file.close()
                 logging.getLogger(PROGRAM_NAME).debug('HiTrack file <%s> closed', self.hitrack_file.name)
         except Exception as e:
-            logging.getLogger(PROGRAM_NAME).error('Error closing HiTrack file <%s>\n', self.hitrack_file.name, e)
+            logging.getLogger(PROGRAM_NAME).error('Error closing HiTrack file <%s>,error:%s', self.hitrack_file.name, e)
 
     def __del__(self):
         self._close_file()
@@ -1083,8 +1078,8 @@ class HiTarBall:
         try:
             self.tarball = tarfile.open(tarball_filename, 'r')
         except Exception as e:
-            logging.getLogger(PROGRAM_NAME).error('Error opening tarball file <%s>\n%s', tarball_filename, e)
-            raise Exception('Error opening tarball file <%s>', tarball_filename)
+            logging.getLogger(PROGRAM_NAME).error('Error opening tarball file <%s>\n', tarball_filename)
+            raise
 
         self.extract_dir = extract_dir
         self.hi_activity_list = []
@@ -1116,8 +1111,8 @@ class HiTarBall:
                         self._extract_and_parse_hitrack_file(tar_info)
             return self.hi_activity_list
         except Exception as e:
-            logging.getLogger(PROGRAM_NAME).error('Error parsing tarball <%s>\n%s', self.tarball.name, e)
-            raise Exception('Error parsing tarball <%s>', self.tarball.name)
+            logging.getLogger(PROGRAM_NAME).error('Error parsing tarball <%s>\n', self.tarball.name)
+            raise
 
     def _extract_and_parse_hitrack_file(self, tar_info):
         try:
@@ -1128,7 +1123,7 @@ class HiTarBall:
             hi_activity = hitrack_file.parse()
             self.hi_activity_list.append(hi_activity)
         except Exception as e:
-            logging.getLogger(PROGRAM_NAME).error('Error parsing HiTrack file <%s> in tarball <%s>',
+            logging.getLogger(PROGRAM_NAME).error('Error parsing HiTrack file <%s> in tarball <%s>\n%s',
                                                   tar_info.path, self.tarball.name, e)
 
     def _close_tarball(self):
@@ -1137,7 +1132,7 @@ class HiTarBall:
                 self.tarball.close()
                 logging.getLogger(PROGRAM_NAME).debug('Tarball <%s> closed', self.tarball.name)
         except Exception as e:
-            logging.getLogger(PROGRAM_NAME).error('Error closing tarball <%s>\n', self.tarball.name, e)
+            logging.getLogger(PROGRAM_NAME).error('Error closing tarball <%s>\n%s', self.tarball.name, e)
 
     def __del__(self):
         self._close_tarball()
@@ -1159,9 +1154,9 @@ class HiZip:
                 elif platform.system() == 'Darwin':
                     unzip_cmd = _MACOS_UNZIP_CMD % (zip_filename, password, output_dir, zip_json_filename)
                 else:
-                    logging.getLogger(PROGRAM_NAME).error('Encrypted ZIP files not supported on platform %s',
-                                                          platform.system())
-                    raise NotImplementedError('Encrypted ZIP files not supported on platform %s', platform.system())
+                    # logging.getLogger(PROGRAM_NAME).error('Encrypted ZIP files not supported on platform %s',
+                                                        #   platform.system())
+                    raise NotImplementedError('Encrypted ZIP files not supported on platform %s' % platform.system())
                 completed_process = subprocess.run(unzip_cmd,
                                                    universal_newlines=True,
                                                    stderr=subprocess.STDOUT,
@@ -1170,8 +1165,8 @@ class HiZip:
                 if completed_process.returncode != 0:
                     logging.getLogger(PROGRAM_NAME).error('Error extracting JSON file <%s> from encrypted ZIP file <%s>. Return code was %s',
                                                           zip_json_filename, zip_filename, completed_process.returncode)
-                    raise Exception('Error extracting JSON file <%s> from encrypted ZIP file <%s>. Return code was %s',
-                                    zip_json_filename, zip_filename, completed_process.returncode)
+                    raise Exception('Error extracting JSON file <%s> from encrypted ZIP file <%s>. Return code was %s'
+                                    % (zip_json_filename, zip_filename, completed_process.returncode))
             else:
                 with ZipFile(zip_filename, 'r', True) as hi_zip:
                     if _MOTION_PATH_JSON_FILENAME in hi_zip.namelist():
@@ -1182,21 +1177,20 @@ class HiZip:
                         logging.getLogger(PROGRAM_NAME).warning('Could not find JSON file <%s> in ZIP file <%s>. \
                                                                 Nothing to convert.',
                                                                 _MOTION_PATH_JSON_FILENAME, zip_filename)
-                        raise Exception('Could not find file <data/motion path detail data.json> in ZIP file <%s>. \
-                                        Nothing to convert.', zip_filename)
+                        raise Exception(f'Could not find file <data/motion path detail data.json> in ZIP file <{zip_filename}>. \
+                                        Nothing to convert.')
 
                     try:
                         hi_zip.extract(zip_json_filename, output_dir)
                     except Exception as e:
                         logging.getLogger(PROGRAM_NAME).error('Error extracting JSON file <%s> from ZIP file <%s>\n%s',
                                                               zip_json_filename, zip_filename, e)
-                        raise Exception('Error extracting JSON file <%s> from ZIP file <%s>',
-                                        zip_json_filename, zip_filename)
+                        raise Exception(f'Error extracting JSON file <{zip_json_filename}> from ZIP file <{zip_filename}>')
             json_filename = output_dir + '/' + zip_json_filename
             return json_filename
         else:
             logging.getLogger(PROGRAM_NAME).error('Invalid ZIP file or ZIP file not found <%s>', zip_filename)
-            raise Exception('Invalid ZIP file or ZIP file not found <%s>', zip_filename)
+            raise Exception(f'Invalid ZIP file or ZIP file not found <{zip_filename}>')
 
 
 class HiJson:
@@ -1473,7 +1467,7 @@ class HiJson:
                 self.json_file.close()
                 logging.getLogger(PROGRAM_NAME).debug('JSON file <%s> closed', self.json_file.name)
         except Exception as e:
-            logging.getLogger(PROGRAM_NAME).error('Error closing JSON file <%s>\n', self.json_file.name, e)
+            logging.getLogger(PROGRAM_NAME).error('Error closing JSON file:<%s>\n%s', self.json_file.name, e)
 
     def __del__(self):
         self._close_json()
@@ -1518,7 +1512,7 @@ class TcxActivity:
     def __init__(self, hi_activity: HiActivity, tcx_xml_schema=None, transform_coordinate=False, save_dir: str = OUTPUT_DIR,
                  filename_prefix: str = None, filename_suffix: str = None, insert_altitude: bool = False):
         if not hi_activity:
-            logging.getLogger(PROGRAM_NAME).error("No valid HiTrack activity specified to construct TCX activity.")
+            # logging.getLogger(PROGRAM_NAME).error("No valid HiTrack activity specified to construct TCX activity.")
             raise Exception("No valid HiTrack activity specified to construct TCX activity.")
         self.hi_activity = hi_activity
         self.training_center_database = None
@@ -1647,7 +1641,7 @@ class TcxActivity:
         except Exception as e:
             logging.getLogger(PROGRAM_NAME).error('Error generating TCX XML content for activity <%s>\n%s',
                                                   self.hi_activity.activity_id, e)
-            raise Exception('Error generating TCX XML content for activity <%s>\n%s', self.hi_activity.activity_id, e)
+            raise Exception(f'Error generating TCX XML content for activity <{self.hi_activity.activity_id}>\n') from e
 
         self.training_center_database = training_center_database
         return training_center_database
@@ -1841,7 +1835,7 @@ class TcxActivity:
                 xml_element_tree.write(tcx_file, 'utf-8')
         except Exception as e:
             logging.getLogger(PROGRAM_NAME).error(
-                'Error saving TCX file <%s> for HiTrack activity <%s> to file <%s>\n%s',
+                'Error saving TCX file <%s> for HiTrack activity <%s> to file <%s>',
                 self.tcx_filename, self.hi_activity.activity_id, e)
             return
         finally:
@@ -1850,7 +1844,7 @@ class TcxActivity:
                     tcx_file.close()
                     logging.getLogger(PROGRAM_NAME).debug('TCX file <%s> closed', tcx_file.name)
             except Exception as e:
-                logging.getLogger(PROGRAM_NAME).error('Error closing TCX file <%s>\n', tcx_file.name, e)
+                logging.getLogger(PROGRAM_NAME).error('Error closing TCX file <%s>\n%s', tcx_file.name, e)
 
         # Validate the TCX XML file if option enabled
         if self.tcx_xml_schema:
@@ -2023,7 +2017,7 @@ def _init_argument_parser() -> argparse.ArgumentParser:
         try:
             return dts.strptime(arg, '%Y-%m-%d').date()
         except ValueError:
-            msg = "Invalid date or date format (expected YYYY-MM-DD): '{0}'.".format(arg)
+            msg = f"Invalid date or date format (expected YYYY-MM-DD): '{arg}'."
             raise argparse.ArgumentTypeError(msg)
 
     date_group.add_argument('--from_date', help='Applicable to --json and --tar options only. Only convert HiTrack \
@@ -2058,11 +2052,9 @@ def _init_argument_parser() -> argparse.ArgumentParser:
                            distance data as calculated from the raw HiTrack data. When not specified (default), all \
                            distances in the TCX files will be normalized to match the original Huawei distance.',
                            action='store_true')
-    
     tcx_group.add_argument('--transform_coordinate', help='Huawei use GCJ-02 as its default coordinate, if you find obvious offset\
                            of the route(mainly in China), try this option to transform to WGS-84 coordinate', type=str,
                             choices=['false', 'true'])
-
     output_group = parser.add_argument_group('OUTPUT options')
     output_group.add_argument('--output_dir', help='The path to the directory to store the output files. The default \
                                              directory is ' + OUTPUT_DIR + '.',
