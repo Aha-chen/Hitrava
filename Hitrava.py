@@ -1143,7 +1143,7 @@ class HiZip:
     def extract_json(zip_filename: str, output_dir: str = OUTPUT_DIR, password: str = None):
         _MOTION_PATH_JSON_FILENAME = 'data/Motion path detail data & description/motion path detail data.json'
         _MOTION_PATH_JSON_FILENAME_ALT = 'Motion path detail data & description/motion path detail data.json'
-        _WINDOWS_UNZIP_CMD = '7za x -aoa "-o%s" -bb0 -bse0 -bsp2 "-p%s" -sccUTF-8 "%s" -- "%s"'
+        _WINDOWS_UNZIP_CMD = '7z x -aoa "-o%s" -bb0 -bse0 -bsp2 "-p%s" -sccUTF-8 "%s" -- "%s"'
         _MACOS_UNZIP_CMD = 'unzip %s -P %s -d %s %s'
 
         if zipfile.is_zipfile(zip_filename):
