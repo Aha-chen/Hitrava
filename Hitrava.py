@@ -1219,7 +1219,7 @@ class HiJson:
             logging.getLogger(PROGRAM_NAME).error('Parameter for JSON filename is missing')
 
         try:
-            self.json_file = open(json_filename, 'r')
+            self.json_file = open(json_filename, 'r',encoding="utf-8")
         except Exception as e:
             logging.getLogger(PROGRAM_NAME).error('Error opening JSON file <%s>\n%s', json_filename, e)
             raise Exception('Error opening JSON file <%s>', json_filename)
